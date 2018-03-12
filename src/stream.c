@@ -156,6 +156,14 @@ typedef struct {            /* tcp cilent type */
     int tirecon;            /* reconnect interval (ms) (0:no reconnect) */
 } tcpcli_t;
 
+typedef struct {            /* udp control type */
+	char saddr[256];        /* destination address string */
+	int port;               /* udp port */
+    int error;
+	struct sockaddr_in addr;/* socket receive address */
+	socket_t sock;          /* socket descriptor */
+} udp_t;
+
 typedef struct {            /* ntrip control type */
     int state;              /* state (0:close,1:wait,2:connect) */
     int type;               /* type (0:server,1:client) */
@@ -173,8 +181,8 @@ typedef struct {            /* ftp download control type */
     int state;              /* state (0:close,1:download,2:complete,3:error) */
     int proto;              /* protocol (0:ftp,1:http) */
     int error;              /* error code (0:no error,1-10:wget error, */
-                            /*            11:no temp dir,12:uncompact error) */
-    char addr[1024];        /* download address */
+							/*            11:no temp dir,12:uncompact error) */
+	char addr[1024];        /* download address */
     char file[1024];        /* download file path */
     char user[256];         /* user for ftp */
     char passwd[256];       /* password for ftp */
@@ -274,7 +282,7 @@ static serial_t *openserial(const char *path, int mode, char *msg)
     DWORD error,rw=0,siz=sizeof(COMMCONFIG);
     COMMCONFIG cc={0};
     COMMTIMEOUTS co={MAXDWORD,0,0,0,0}; /* non-block-read */
-    char dcb[64]="";
+	char dcb[64]="";
 #else
     const speed_t bs[]={
         B300,B600,B1200,B2400,B4800,B9600,B19200,B38400,B57600,B115200,B230400
@@ -436,7 +444,7 @@ static int writeserial(serial_t *serial, unsigned char *buff, int n, char *msg)
 /* get state serial ----------------------------------------------------------*/
 static int stateserial(serial_t *serial)
 {
-    return !serial?0:(serial->error?-1:2);
+	return !serial?0:(serial->error?-1:2);
 }
 /* open file -----------------------------------------------------------------*/
 static int openfile_(file_t *file, gtime_t time, char *msg)
@@ -753,13 +761,13 @@ static void syncfile(file_t *file1, file_t *file2)
     file2->repmode=1;
     file2->offset=(int)(file1->tick_f-file2->tick_f);
 }
-/* decode tcp/ntrip path (path=[user[:passwd]@]addr[:port][/mntpnt[:str]]) ---*/
-static void decodetcppath(const char *path, char *addr, char *port, char *user,
+/* decode tcp/ntrip/udp path (path=[user[:passwd]@]addr[:port][/mntpnt[:str]]) ---*/
+static void decodenetpath(const char *path, char *addr, char *port, char *user,
                           char *passwd, char *mntpnt, char *str)
 {
     char buff[MAXSTRPATH],*p,*q;
     
-    tracet(4,"decodetcpepath: path=%s\n",path);
+    tracet(4,"decodenetepath: path=%s\n",path);
     
     if (port) *port='\0';
     if (user) *user='\0';
@@ -801,31 +809,31 @@ static int errsock(void) {return errno;}
 /* set socket option ---------------------------------------------------------*/
 static int setsock(socket_t sock, char *msg)
 {
-    int bs=buffsize,mode=1;
+	int bs=buffsize,mode=1;
 #ifdef WIN32
-    int tv=0;
+	int tv=0;
 #else
-    struct timeval tv={0};
+	struct timeval tv={0};
 #endif
-    tracet(3,"setsock: sock=%d\n",sock);
-    
-    if (setsockopt(sock,SOL_SOCKET,SO_RCVTIMEO,(const char *)&tv,sizeof(tv))==-1||
-        setsockopt(sock,SOL_SOCKET,SO_SNDTIMEO,(const char *)&tv,sizeof(tv))==-1) {
-        sprintf(msg,"sockopt error: notimeo");
-        tracet(1,"setsock: setsockopt error 1 sock=%d err=%d\n",sock,errsock());
-        closesocket(sock);
-        return 0;
-    }
-    if (setsockopt(sock,SOL_SOCKET,SO_RCVBUF,(const char *)&bs,sizeof(bs))==-1||
-        setsockopt(sock,SOL_SOCKET,SO_SNDBUF,(const char *)&bs,sizeof(bs))==-1) {
-        tracet(1,"setsock: setsockopt error 2 sock=%d err=%d bs=%d\n",sock,errsock(),bs);
-        sprintf(msg,"sockopt error: bufsiz");
-    }
-    if (setsockopt(sock,IPPROTO_TCP,TCP_NODELAY,(const char *)&mode,sizeof(mode))==-1) {
-        tracet(1,"setsock: setsockopt error 3 sock=%d err=%d\n",sock,errsock());
-        sprintf(msg,"sockopt error: nodelay");
-    }
-    return 1;
+	tracet(3,"setsock: sock=%d\n",sock);
+
+	if (setsockopt(sock,SOL_SOCKET,SO_RCVTIMEO,(const char *)&tv,sizeof(tv))==-1||
+		setsockopt(sock,SOL_SOCKET,SO_SNDTIMEO,(const char *)&tv,sizeof(tv))==-1) {
+		sprintf(msg,"sockopt error: notimeo");
+		tracet(1,"setsock: setsockopt error 1 sock=%d err=%d\n",sock,errsock());
+		closesocket(sock);
+		return 0;
+	}
+	if (setsockopt(sock,SOL_SOCKET,SO_RCVBUF,(const char *)&bs,sizeof(bs))==-1||
+		setsockopt(sock,SOL_SOCKET,SO_SNDBUF,(const char *)&bs,sizeof(bs))==-1) {
+		tracet(1,"setsock: setsockopt error 2 sock=%d err=%d bs=%d\n",sock,errsock(),bs);
+		sprintf(msg,"sockopt error: bufsiz");
+	}
+	if (setsockopt(sock,IPPROTO_TCP,TCP_NODELAY,(const char *)&mode,sizeof(mode))==-1) {
+		tracet(1,"setsock: setsockopt error 3 sock=%d err=%d\n",sock,errsock());
+		sprintf(msg,"sockopt error: nodelay");
+	}
+	return 1;
 }
 /* non-block accept ----------------------------------------------------------*/
 static socket_t accept_nb(socket_t sock, struct sockaddr *addr, socklen_t *len)
@@ -843,7 +851,8 @@ static int connect_nb(socket_t sock, struct sockaddr *addr, socklen_t len)
 #ifdef WIN32
     u_long mode=1; 
     int err;
-    
+
+	tracet(5, "connect_nb: win socket \n");
     ioctlsocket(sock,FIONBIO,&mode);
     if (connect(sock,addr,len)==-1) {
         err=errsock();
@@ -913,11 +922,11 @@ static int gentcp(tcp_t *tcp, int type, char *msg)
     tcp->addr.sin_port=htons(tcp->port);
     
     if (type==0) { /* server socket */
-    
+
 #ifdef SVR_REUSEADDR
-        /* multiple-use of server socket */
-        setsockopt(tcp->sock,SOL_SOCKET,SO_REUSEADDR,(const char *)&opt,
-                   sizeof(opt));
+		/* multiple-use of server socket */
+		setsockopt(tcp->sock,SOL_SOCKET,SO_REUSEADDR,(const char *)&opt,
+				   sizeof(opt));
 #endif
         if (bind(tcp->sock,(struct sockaddr *)&tcp->addr,sizeof(tcp->addr))==-1) {
             sprintf(msg,"bind error (%d) : %d",errsock(),tcp->port);
@@ -965,17 +974,17 @@ static tcpsvr_t *opentcpsvr(const char *path, char *msg)
     
     if (!(tcpsvr=(tcpsvr_t *)malloc(sizeof(tcpsvr_t)))) return NULL;
     *tcpsvr=tcpsvr0;
-    decodetcppath(path,tcpsvr->svr.saddr,port,NULL,NULL,NULL,NULL);
+    decodenetpath(path,tcpsvr->svr.saddr,port,NULL,NULL,NULL,NULL);
     if (sscanf(port,"%d",&tcpsvr->svr.port)<1) {
         sprintf(msg,"port error: %s",port);
         tracet(1,"opentcpsvr: port error port=%s\n",port);
         free(tcpsvr);
         return NULL;
     }
-    if (!gentcp(&tcpsvr->svr,0,msg)) {
-        free(tcpsvr);
-        return NULL;
-    }
+	if (!gentcp(&tcpsvr->svr,0,msg)) {
+		free(tcpsvr);
+		return NULL;
+	}
     tcpsvr->svr.tcon=0;
     return tcpsvr;
 }
@@ -1132,15 +1141,15 @@ static int consock(tcpcli_t *tcpcli, char *msg)
         return 0;
     }
     /* non-block connect */
-    if ((stat=connect_nb(tcpcli->svr.sock,(struct sockaddr *)&tcpcli->svr.addr,
-                         sizeof(tcpcli->svr.addr)))==-1) {
-        err=errsock();
-        sprintf(msg,"connect error (%d)",err);
-        tracet(1,"consock: connect error sock=%d err=%d\n",tcpcli->svr.sock,err);
-        closesocket(tcpcli->svr.sock);
-        tcpcli->svr.state=0;
-        return 0;
-    }
+	if ((stat=connect_nb(tcpcli->svr.sock,(struct sockaddr *)&tcpcli->svr.addr,
+						 sizeof(tcpcli->svr.addr)))==-1) {
+		err=errsock();
+		sprintf(msg,"connect error (%d)",err);
+		tracet(1,"consock: connect error sock=%d err=%d\n",tcpcli->svr.sock,err);
+		closesocket(tcpcli->svr.sock);
+		tcpcli->svr.state=0;
+		return 0;
+	}
     if (!stat) { /* not connect */
         sprintf(msg,"connecting...");
         return 0;
@@ -1161,7 +1170,7 @@ static tcpcli_t *opentcpcli(const char *path, char *msg)
     
     if (!(tcpcli=(tcpcli_t *)malloc(sizeof(tcpcli_t)))) return NULL;
     *tcpcli=tcpcli0;
-    decodetcppath(path,tcpcli->svr.saddr,port,NULL,NULL,NULL,NULL);
+    decodenetpath(path,tcpcli->svr.saddr,port,NULL,NULL,NULL,NULL);
     if (sscanf(port,"%d",&tcpcli->svr.port)<1) {
         sprintf(msg,"port error: %s",port);
         tracet(1,"opentcp: port error port=%s\n",port);
@@ -1270,6 +1279,177 @@ static int encbase64(char *str, const unsigned char *byte, int n)
     tracet(5,"encbase64: str=%s\n",str);
     return j;
 }
+
+
+
+
+/* set socket option to udp --------------------------------------------------*/
+static int setsockudp(socket_t sock, char *msg)
+{
+	int bs=buffsize,mode=1;
+#ifdef WIN32
+	int tv=0;
+#else
+	struct timeval tv={0};
+#endif
+	tracet(3,"setsock: sock=%d\n",sock);
+
+	if (setsockopt(sock,SOL_SOCKET,SO_RCVTIMEO,(const char *)&tv,sizeof(tv))==-1||
+		setsockopt(sock,SOL_SOCKET,SO_SNDTIMEO,(const char *)&tv,sizeof(tv))==-1) {
+		sprintf(msg,"sockopt error: notimeo");
+		tracet(1,"setsock: setsockopt error 1 sock=%d err=%d\n",sock,errsock());
+		closesocket(sock);
+		return 0;
+	}
+	if (setsockopt(sock,SOL_SOCKET,SO_RCVBUF,(const char *)&bs,sizeof(bs))==-1||
+		setsockopt(sock,SOL_SOCKET,SO_SNDBUF,(const char *)&bs,sizeof(bs))==-1) {
+		tracet(1,"setsock: setsockopt error 2 sock=%d err=%d bs=%d\n",sock,errsock(),bs);
+		sprintf(msg,"sockopt error: bufsiz");
+	}
+	return 1;
+}
+/* generate udp socket -------------------------------------------------------*/
+static int genudp(udp_t *udp, int type, char *msg)
+{
+    struct hostent *hp;
+#ifdef SVR_REUSEADDR
+	int opt=1;
+#endif
+
+	tracet(3,"genudp: type=%d msg=%s\n",type, msg);
+
+	/* generate socket */
+	if ((udp->sock=socket(PF_INET,SOCK_DGRAM,0))==(socket_t)-1) {
+        sprintf(msg,"socket error (%d)",errsock());
+		tracet(1,"genudp: socket error err=%d\n",errsock());
+		udp->error=-1;
+		return 0;
+	}
+	if (!setsockudp(udp->sock,msg)) {
+		udp->error=-1;
+		tracet(1,"genudp: setsockudp err=%d\n",errsock());
+        return 0;
+	}
+	memset(&udp->addr,0,sizeof(udp->addr));
+	udp->addr.sin_family=AF_INET;
+	udp->addr.sin_port=htons(udp->port);
+	udp->addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+	if (type==0) { /* server socket */
+#ifdef SVR_REUSEADDR
+		/* multiple-use of server socket */
+		setsockopt(udp->sock,SOL_SOCKET,SO_REUSEADDR,(const char *)&opt,
+				   sizeof(opt));
+#endif
+		if (bind(udp->sock,(struct sockaddr *)&udp->addr,sizeof(udp->addr))==-1) {
+			sprintf(msg,"bind error (%d) : %d",errsock(),udp->port);
+			tracet(1,"genudp: bind error port=%d err=%d\n",udp->port,errsock());
+			closesocket(udp->sock);
+			udp->error=-1;
+			return 0;
+		}
+		tracet(5, "genudp: Finished binding socket!\n");
+	} else {  /* client socket */
+		// Set the remote address to connect to.  Use the same port though.
+		udp->addr.sin_addr.s_addr = inet_addr(udp->saddr);
+		tracet(5, "genudp connecting to: ip: %s  port: %d \n", udp->saddr, udp->port);
+
+		// Normally we don't connect for UDP, but this has the intent of setting
+		// the default send address for our other non-blocking calls
+		if ((connect_nb(udp->sock,(struct sockaddr *)&udp->addr, sizeof(udp->addr)))==-1) {
+			int err=errsock();
+			sprintf(msg,"connect error (%d)",err);
+			tracet(1,"openudp: connect error sock=%d err=%d\n",udp->sock,err);
+			closesocket(udp->sock);
+			udp->error=-1;
+			return NULL;
+		}
+    }
+
+	udp->error=0;
+	tracet(5,"genudp: exit sock=%d\n",udp->sock);
+    return 1;
+}
+/* open udp stream -----------------------------------------------------------*/
+static udp_t *openudp(const char *path, int type, char *msg)
+{
+	udp_t *udp,udp0={{0}};
+	char port[256]="";
+
+	tracet(3,"openudp: path=%s\n",path);
+
+	if (!(udp=(udp_t *)malloc(sizeof(udp_t)))) return NULL;
+	*udp=udp0;
+	decodenetpath(path,udp->saddr,port,NULL,NULL,NULL,NULL);
+	if (sscanf(port,"%d",&udp->port)<1) {
+        sprintf(msg,"port error: %s",port);
+		tracet(1,"openudp: port error port=%s\n",port);
+		free(udp);
+        return NULL;
+	}
+	if (!genudp(udp,type,msg)) {
+		free(udp);
+		return NULL;
+	}
+
+	return udp;
+}
+/* close udp stream ----------------------------------------------------------*/
+static void closeudp(udp_t *udp)
+{
+	tracet(3,"closeudp: sock=%d\n",udp->sock);
+
+	closesocket(udp->sock);
+    free(udp);
+}
+/* read udp stream -----------------------------------------------------------*/
+static int readudp(udp_t *udp, unsigned char *buff, int n, char *msg)
+{
+	int nr,err;
+
+	tracet(4,"readudp: sock=%d n=%d\n",udp->sock, n);
+
+	if ((nr=recv_nb(udp->sock,buff,n))==-1) {
+        err=errsock();
+		tracet(1,"readudp: recv error sock=%d err=%d\n",udp->sock,err);
+		sprintf(msg,"recv error (%d)",err);
+        return 0;
+	}
+	tracet(5,"readudp: exit sock=%d nr=%d\n",udp->sock,nr);
+    return nr;
+}
+/* write udp stream ----------------------------------------------------------*/
+static int writeudp(udp_t *udp, unsigned char *buff, int n, char *msg)
+{
+	int ns,err;
+
+
+	// No need to flood with empty writes, udp has no keepalive requirement
+    // that would make packet flooding useful.
+	if (n < 1) return 0;
+
+	tracet(3,"writeudp: sock=%d n=%d\n",udp->sock,n);
+
+	if ((ns=send_nb(udp->sock,buff,n))==-1) {
+		err=errsock();
+		tracet(1,"writeudp: send error sock=%d err=%d\n",udp->sock,err);
+		sprintf(msg,"send error (%d)",err);
+		return 0;
+	}
+	tracet(5,"writetcpcli: exit sock=%d ns=%d\n",udp->sock,ns);
+
+    return ns;
+}
+ /* get state udp ----------------------------------------------------------*/
+static int stateudp(udp_t *udp)
+{
+	return !udp?0:udp->error;
+}
+
+
+
+
+
 /* send ntrip server request -------------------------------------------------*/
 static int reqntrip_s(ntrip_t *ntrip, char *msg)
 {
@@ -1462,7 +1642,7 @@ static ntrip_t *openntrip(const char *path, int type, char *msg)
     for (i=0;i<NTRIP_MAXRSP;i++) ntrip->buff[i]=0;
     
     /* decode tcp/ntrip path */
-    decodetcppath(path,addr,port,ntrip->user,ntrip->passwd,ntrip->mntpnt,
+    decodenetpath(path,addr,port,ntrip->user,ntrip->passwd,ntrip->mntpnt,
                   ntrip->str);
     
     /* use default port if no port specified */
@@ -1477,7 +1657,7 @@ static ntrip_t *openntrip(const char *path, int type, char *msg)
         strcpy(tpath,proxyaddr);
     }
     /* open tcp client stream */
-    if (!(ntrip->tcp=opentcpcli(tpath,msg))) {
+	if (!(ntrip->tcp=opentcpcli(tpath,msg))) {
         tracet(1,"openntrip: opentcp error\n");
         free(ntrip);
         return NULL;
@@ -1841,25 +2021,26 @@ extern void strinit(stream_t *stream)
 *-----------------------------------------------------------------------------*/
 extern int stropen(stream_t *stream, int type, int mode, const char *path)
 {
-    tracet(3,"stropen: type=%d mode=%d path=%s\n",type,mode,path);
+	tracet(3,"stropen: type=%d mode=%d path=%s\n",type,mode,path);
     
     stream->type=type;
     stream->mode=mode;
-    strcpy(stream->path,path);
+	strcpy(stream->path,path);
     stream->inb=stream->inr=stream->outb=stream->outr=0;
     stream->tick=tickget();
     stream->inbt=stream->outbt=0;
     stream->msg[0]='\0';
-    stream->port=NULL;
+	stream->port=NULL;
     switch (type) {
         case STR_SERIAL  : stream->port=openserial(path,mode,stream->msg); break;
         case STR_FILE    : stream->port=openfile  (path,mode,stream->msg); break;
         case STR_TCPSVR  : stream->port=opentcpsvr(path,     stream->msg); break;
-        case STR_TCPCLI  : stream->port=opentcpcli(path,     stream->msg); break;
+		case STR_TCPCLI  : stream->port=opentcpcli(path,     stream->msg); break;
+		case STR_UDP     : stream->port=openudp   (path,1,   stream->msg); break;
         case STR_NTRIPSVR: stream->port=openntrip (path,0,   stream->msg); break;
-        case STR_NTRIPCLI: stream->port=openntrip (path,1,   stream->msg); break;
+		case STR_NTRIPCLI: stream->port=openntrip (path,1,   stream->msg); break;
         case STR_FTP     : stream->port=openftp   (path,0,   stream->msg); break;
-        case STR_HTTP    : stream->port=openftp   (path,1,   stream->msg); break;
+		case STR_HTTP    : stream->port=openftp   (path,1,   stream->msg); break;
         default: stream->state=0; return 1;
     }
     stream->state=!stream->port?-1:1;
@@ -1879,12 +2060,13 @@ extern void strclose(stream_t *stream)
             case STR_SERIAL  : closeserial((serial_t *)stream->port); break;
             case STR_FILE    : closefile  ((file_t   *)stream->port); break;
             case STR_TCPSVR  : closetcpsvr((tcpsvr_t *)stream->port); break;
-            case STR_TCPCLI  : closetcpcli((tcpcli_t *)stream->port); break;
+			case STR_TCPCLI  : closetcpcli((tcpcli_t *)stream->port); break;
+            case STR_UDP     : closeudp   ((udp_t    *)stream->port); break;
             case STR_NTRIPSVR: closentrip ((ntrip_t  *)stream->port); break;
             case STR_NTRIPCLI: closentrip ((ntrip_t  *)stream->port); break;
             case STR_FTP     : closeftp   ((ftp_t    *)stream->port); break;
-            case STR_HTTP    : closeftp   ((ftp_t    *)stream->port); break;
-        }
+			case STR_HTTP    : closeftp   ((ftp_t    *)stream->port); break;
+		}
     }
     else {
         trace(2,"no port to close stream: type=%d\n",stream->type);
@@ -1944,10 +2126,11 @@ extern int strread(stream_t *stream, unsigned char *buff, int n)
         case STR_SERIAL  : nr=readserial((serial_t *)stream->port,buff,n,msg); break;
         case STR_FILE    : nr=readfile  ((file_t   *)stream->port,buff,n,msg); break;
         case STR_TCPSVR  : nr=readtcpsvr((tcpsvr_t *)stream->port,buff,n,msg); break;
-        case STR_TCPCLI  : nr=readtcpcli((tcpcli_t *)stream->port,buff,n,msg); break;
+		case STR_TCPCLI  : nr=readtcpcli((tcpcli_t *)stream->port,buff,n,msg); break;
+        case STR_UDP     : nr=readudp   ((udp_t    *)stream->port,buff,n,msg); break;
         case STR_NTRIPCLI: nr=readntrip ((ntrip_t  *)stream->port,buff,n,msg); break;
         case STR_FTP     : nr=readftp   ((ftp_t    *)stream->port,buff,n,msg); break;
-        case STR_HTTP    : nr=readftp   ((ftp_t    *)stream->port,buff,n,msg); break;
+		case STR_HTTP    : nr=readftp   ((ftp_t    *)stream->port,buff,n,msg); break;
         default:
             strunlock(stream);
             return 0;
@@ -1979,19 +2162,20 @@ extern int strwrite(stream_t *stream, unsigned char *buff, int n)
     tracet(3,"strwrite: n=%d\n",n);
     
     if (!(stream->mode&STR_MODE_W)||!stream->port) return 0;
-    
+
     strlock(stream);
     
     switch (stream->type) {
         case STR_SERIAL  : ns=writeserial((serial_t *)stream->port,buff,n,msg); break;
         case STR_FILE    : ns=writefile  ((file_t   *)stream->port,buff,n,msg); break;
         case STR_TCPSVR  : ns=writetcpsvr((tcpsvr_t *)stream->port,buff,n,msg); break;
-        case STR_TCPCLI  : ns=writetcpcli((tcpcli_t *)stream->port,buff,n,msg); break;
-        case STR_NTRIPCLI:
+		case STR_TCPCLI  : ns=writetcpcli((tcpcli_t *)stream->port,buff,n,msg); break;
+		case STR_UDP     : ns=writeudp   ((udp_t    *)stream->port,buff,n,msg); break;
+		case STR_NTRIPCLI:
         case STR_NTRIPSVR: ns=writentrip ((ntrip_t  *)stream->port,buff,n,msg); break;
         case STR_FTP     :
-        case STR_HTTP    :
-        default:
+		case STR_HTTP    :
+		default:
             strunlock(stream);
             return 0;
     }
@@ -2029,11 +2213,12 @@ extern int strstat(stream_t *stream, char *msg)
         case STR_SERIAL  : state=stateserial((serial_t *)stream->port); break;
         case STR_FILE    : state=statefile  ((file_t   *)stream->port); break;
         case STR_TCPSVR  : state=statetcpsvr((tcpsvr_t *)stream->port); break;
-        case STR_TCPCLI  : state=statetcpcli((tcpcli_t *)stream->port); break;
+		case STR_TCPCLI  : state=statetcpcli((tcpcli_t *)stream->port); break;
+		case STR_UDP     : state=stateudp   ((udp_t    *)stream->port); break;
         case STR_NTRIPSVR:
         case STR_NTRIPCLI: state=statentrip ((ntrip_t  *)stream->port); break;
         case STR_FTP     : state=stateftp   ((ftp_t    *)stream->port); break;
-        case STR_HTTP    : state=stateftp   ((ftp_t    *)stream->port); break;
+		case STR_HTTP    : state=stateftp   ((ftp_t    *)stream->port); break;
         default:
             strunlock(stream);
             return 0;
@@ -2081,7 +2266,7 @@ extern void strsetopt(const int *opt)
            opt[3],opt[4],opt[5],opt[6],opt[7]);
     
     toinact    =0<opt[0]&&opt[0]<1000?1000:opt[0]; /* >=1s */
-    ticonnect  =opt[1]<1000?1000:opt[1]; /* >=1s */
+	ticonnect  =opt[1]<1000?1000:opt[1]; /* >=1s */
     tirate     =opt[2]<100 ?100 :opt[2]; /* >=0.1s */
     buffsize   =opt[3]<4096?4096:opt[3]; /* >=4096byte */
     fswapmargin=opt[4]<0?0:opt[4];

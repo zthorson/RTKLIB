@@ -31,7 +31,7 @@ void __fastcall TTcpOptDialog::FormShow(TObject *Sender)
 	char *ti[]={"TCP Server Options ","TCP Client Options",
 				"NTRIP Server Options","NTRIP Client Options",
 				"UDP Broadcast Options"};
-	char *ad[}={"TCP Server Address","TCP Client Address",
+	char *ad[]={"TCP Server Address","TCP Client Address",
 				"NTRIP Caster Host","NTRIP Caster Host",
 				"UDP Destination Address"};
 	strcpy(buff,Path.c_str());

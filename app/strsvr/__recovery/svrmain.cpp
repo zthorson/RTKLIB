@@ -434,11 +434,13 @@ void __fastcall TMainForm::SvrStart(void)
 		STR_SERIAL,STR_TCPCLI,STR_TCPSVR,STR_NTRIPCLI,STR_FILE,STR_FTP,STR_HTTP
     };
     int otype[]={
-        STR_NONE,STR_SERIAL,STR_TCPCLI,STR_TCPSVR,STR_NTRIPSVR,STR_FILE,STR_UDP
+		STR_NONE,STR_SERIAL,STR_TCPCLI,STR_TCPSVR,STR_NTRIPSVR,STR_FILE,STR_UDP
     };
-    int ip[]={0,1,1,1,2,3,3},strs[4]={0},opt[7]={0},n;
+	int in_ip[]={0,1,1,1,2,3,3};
+	int out_ip[]={0,0,1,1,1,2,1};
+	int strs[4]={0},opt[7]={0},n;
     char *paths[4],*cmd=NULL,filepath[1024],buff[1024];
-    char *ant[3]={"","",""},*rcv[3]={"","",""},*p;
+	char *ant[3]={"","",""},*rcv[3]={"","",""},*p;
     FILE *fp;
     
     if (TraceLevel>0) {
@@ -450,18 +452,18 @@ void __fastcall TMainForm::SvrStart(void)
     strs[0]=itype[Input->ItemIndex];
     strs[1]=otype[Output1->ItemIndex];
     strs[2]=otype[Output2->ItemIndex];
-    strs[3]=otype[Output3->ItemIndex];
+	strs[3]=otype[Output3->ItemIndex];
     
-    strcpy(paths[0],Paths[0][ip[Input->ItemIndex]].c_str());
-    strcpy(paths[1],!Output1->ItemIndex?"":Paths[1][ip[Output1->ItemIndex-1]].c_str());
-    strcpy(paths[2],!Output2->ItemIndex?"":Paths[2][ip[Output2->ItemIndex-1]].c_str());
-    strcpy(paths[3],!Output3->ItemIndex?"":Paths[3][ip[Output3->ItemIndex-1]].c_str());
+	strcpy(paths[0],Paths[0][in_ip[Input->ItemIndex]].c_str());
+	strcpy(paths[1],!Output1->ItemIndex?"":Paths[1][out_ip[Output1->ItemIndex]].c_str());
+	strcpy(paths[2],!Output2->ItemIndex?"":Paths[2][out_ip[Output2->ItemIndex]].c_str());
+	strcpy(paths[3],!Output3->ItemIndex?"":Paths[3][out_ip[Output3->ItemIndex]].c_str());
     
-    if (Input->ItemIndex==0) {
+	if (Input->ItemIndex==0) {
         if (CmdEna[0]) cmd=MainForm->Cmds[0].c_str();
     }
     else if (Input->ItemIndex==1||Input->ItemIndex==3) {
-        if (CmdEnaTcp[0]) cmd=MainForm->CmdsTcp[0].c_str();
+		if (CmdEnaTcp[0]) cmd=MainForm->CmdsTcp[0].c_str();
     }
     for (int i=0;i<5;i++) {
         opt[i]=SvrOpt[i];
@@ -472,7 +474,7 @@ void __fastcall TMainForm::SvrStart(void)
     for (int i=1;i<4;i++) {
         if (strs[i]!=STR_FILE) continue;
         strcpy(filepath,paths[i]);
-        if (strstr(filepath,"::A")) continue;
+		if (strstr(filepath,"::A")) continue;
         if ((p=strstr(filepath,"::"))) *p='\0';
         if (!(fp=fopen(filepath,"r"))) continue;
         fclose(fp);
@@ -670,7 +672,7 @@ void __fastcall TMainForm::LoadOpt(void)
     for (int i=0;i<2;i++) {
         Cmds[i]=ini->ReadString("serial",s.sprintf("cmd_%d",i),"");
         for (char *p=Cmds[i].c_str();*p;p++) {
-            if ((p=strstr(p,"@@"))) strncpy(p,"\r\n",2); else break;
+			if ((p=strstr(p,"@@"))) strncpy(p,"\r\n",2); else break;
         }
     }
     for (int i=0;i<2;i++) {
@@ -740,7 +742,7 @@ void __fastcall TMainForm::SaveOpt(void)
     }
     for (int i=0;i<2;i++) {
         for (char *p=CmdsTcp[i].c_str();*p;p++) {
-            if ((p=strstr(p,"\r\n"))) strncpy(p,"@@",2); else break;
+			if ((p=strstr(p,"\r\n"))) strncpy(p,"@@",2); else break;
         }
         ini->WriteString("tcpip",s.sprintf("cmd_%d",i),CmdsTcp[i]);
     }
